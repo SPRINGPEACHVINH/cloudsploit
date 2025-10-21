@@ -4,7 +4,7 @@
   "description": "AWS, Azure, GCP, Oracle, GitHub security scanning scripts",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon index.js",
+    "dev": "nodemon ./server/api_server.js",
     "test": "mocha './**/*.spec.js'",
     "test-watch": "nodemon --exec npm run test",
     "test-cov": "nyc --reporter text --reporter cobertura --reporter lcov --all -- npm run test",
@@ -40,6 +40,7 @@
     "access": "public"
   },
   "dependencies": {
+    "14": "^3.1.6",
     "@alicloud/pop-core": "^1.7.10",
     "@azure/data-tables": "^13.2.2",
     "@azure/storage-blob": "^12.14.0",

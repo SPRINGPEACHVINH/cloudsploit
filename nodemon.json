@@ -1,0 +1,6 @@
+{
+  "watch": ["server"],
+  "ignore": ["server/scan_result/**/*", "*.json", "*.log"],
+  "ext": "js,json",
+  "delay": 1000
+}

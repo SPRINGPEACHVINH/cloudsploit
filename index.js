@@ -31,7 +31,8 @@ parser.add_argument('--compliance', {
     action: 'append'
 });
 parser.add_argument('--plugin', {
-    help: 'A specific plugin to run. If none provided, all plugins will be run. Obtain from the exports.js file. E.g. acmValidation'
+    help: 'A specific plugin to run or an array of plugins. If none provided, all plugins will be run. Obtain from the exports.js file.',
+    action: 'append'
 });
 parser.add_argument('--govcloud', {
     help: 'AWS only. Enables GovCloud mode.',

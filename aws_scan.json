@@ -1,0 +1,22 @@
+[
+  {
+    "plugin": "bucketPublicAccessBlock",
+    "category": "S3",
+    "title": "S3 Bucket Public Access Block",
+    "description": "Ensures S3 public access block is enabled on all buckets or for AWS account",
+    "resource": "arn:aws:s3:::aws-cloudtrail-logs-140023374115-9c19f96c",
+    "region": "ap-southeast-2",
+    "status": "OK",
+    "message": "S3 bucket has public access block fully enabled"
+  },
+  {
+    "plugin": "bucketPublicAccessBlock",
+    "category": "S3",
+    "title": "S3 Bucket Public Access Block",
+    "description": "Ensures S3 public access block is enabled on all buckets or for AWS account",
+    "resource": "arn:aws:s3:::emayelktest",
+    "region": "ap-southeast-2",
+    "status": "OK",
+    "message": "S3 bucket has public access block fully enabled"
+  }
+]

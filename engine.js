@@ -4,9 +4,36 @@ var suppress = require('./postprocess/suppress.js');
 var output = require('./postprocess/output.js');
 var azureHelper = require('./helpers/azure/auth.js');
 
+// Define default plugin lists for each cloud provider
+const DEFAULT_PLUGINS = {
+    aws: [
+        'securityHubEnabled',
+        's3Encryption',
+        'bucketEncryption',
+        'bucketEncryptionInTransit',
+        'bucketLogging',
+        'bucketLifecycleConfiguration',
+        'bucketMFADeleteEnabled',
+        'bucketPublicAccessBlock',
+        'auditLoggingEnabled',
+        'userActivityLoggingEnabled',
+        'secretRotationEnabled'
+    ],
+    azure: [
+        // Add Azure default plugins here
+        'storageAccountEncryption',
+        'networkSecurityGroupRules',
+        'sqlDatabaseEncryption'
+    ],
+    // Add other cloud providers as needed
+    gcp: [],
+    oracle: [],
+    github: []
+};
+
 function runAuth(settings, remediateConfig, callback) {
     if (settings.cloud && settings.cloud == 'azure') {
-        azureHelper.login(remediateConfig, function(err, loginData) {
+        azureHelper.login(remediateConfig, function (err, loginData) {
             if (err) return (callback(err));
             remediateConfig.token = loginData.token;
             return callback();
@@ -14,7 +41,7 @@ function runAuth(settings, remediateConfig, callback) {
     } else callback();
 }
 
-async function uploadResultsToBlob(resultsObject, storageConnection, blobContainerName ) {
+async function uploadResultsToBlob(resultsObject, storageConnection, blobContainerName) {
     var azureStorage = require('@azure/storage-blob');
 
     try {
@@ -48,7 +75,7 @@ async function uploadResultsToBlob(resultsObject, storageConnection, blobContain
  * @param cloudConfig The configuration for the cloud provider.
  * @param settings General purpose settings.
  */
-var engine = function(cloudConfig, settings) {
+var engine = function (cloudConfig, settings) {
     // Initialize any suppression rules based on the the command line arguments
     var suppressionFilter = suppress.create(settings.suppress);
 
@@ -68,6 +95,17 @@ var engine = function(cloudConfig, settings) {
         resourceMap = {};
     }
 
+    // If no plugin specified, use default list for the cloud provider
+    if (!settings.plugin || !settings.plugin.length) {
+        settings.plugin = DEFAULT_PLUGINS[settings.cloud] || [];
+        if (settings.plugin.length) {
+            console.log(`INFO: No plugins specified. Using default plugin list for ${settings.cloud}`);
+            console.log(`INFO: Default plugins (${settings.plugin.length}): ${settings.plugin.join(', ')}`);
+        } else {
+            console.log(`WARN: No default plugins defined for ${settings.cloud}. Please specify plugins manually.`);
+            return;
+        }
+    }
     // Print customization options
     if (settings.compliance) console.log(`INFO: Using compliance modes: ${settings.compliance.join(', ')}`);
     if (settings.govcloud) console.log('INFO: Using AWS GovCloud mode');
@@ -77,8 +115,13 @@ var engine = function(cloudConfig, settings) {
     if (settings.suppress && settings.suppress.length) console.log('INFO: Suppressing results based on suppress flags');
     if (settings.remediate && settings.remediate.length) console.log('INFO: Remediate the plugins mentioned here');
     if (settings.plugin) {
-        if (!plugins[settings.plugin]) return console.log(`ERROR: Invalid plugin: ${settings.plugin}`);
-        console.log(`INFO: Testing plugin: ${plugins[settings.plugin].title}`);
+        if (Array.isArray(settings.plugin)) {
+            console.log(`INFO: Running specified plugins: ${settings.plugin.join(', ')}`);
+        }
+        else {
+            if (!plugins[settings.plugin]) return console.log(`ERROR: Invalid plugin: ${settings.plugin}`);
+            console.log(`INFO: Testing plugin: ${plugins[settings.plugin].title}`);
+        }
     }
 
     // STEP 1 - Obtain API calls to make
@@ -86,15 +129,31 @@ var engine = function(cloudConfig, settings) {
 
     var skippedPlugins = [];
 
-    Object.entries(plugins).forEach(function(p){
+    Object.entries(plugins).forEach(function (p) {
         var pluginId = p[0];
         var plugin = p[1];
 
         // Skip plugins that don't match the ID flag
         var skip = false;
-        if (settings.plugin && settings.plugin !== pluginId) {
-            skip = true;
-        } else {
+
+        // Check if plugin is in the allowed list
+        if (settings.plugin && settings.plugin.length) {
+            if (Array.isArray(settings.plugin)) {
+                // If plugin array is specified, only run plugins in the array
+                if (settings.plugin.indexOf(pluginId) === -1) {
+                    skip = true;
+                }
+            } else {
+                // Single plugin specified (backward compatibility)
+                if (settings.plugin !== pluginId) {
+                    skip = true;
+                }
+            }
+        }
+        // if (settings.plugin && settings.plugin !== pluginId) {
+        //     skip = true;
+        // } else {
+        if (!skip) {
             // Skip GitHub plugins that do not match the run type
             if (settings.cloud == 'github') {
                 if (cloudConfig.organization &&
@@ -115,7 +174,7 @@ var engine = function(cloudConfig, settings) {
                 } else {
                     // Compare
                     var cMatch = false;
-                    settings.compliance.forEach(function(c){
+                    settings.compliance.forEach(function (c) {
                         if (plugin.compliance[c]) cMatch = true;
                     });
                     if (!cMatch) {
@@ -129,12 +188,12 @@ var engine = function(cloudConfig, settings) {
         if (skip) {
             skippedPlugins.push(pluginId);
         } else {
-            plugin.apis.forEach(function(api) {
+            plugin.apis.forEach(function (api) {
                 if (apiCalls.indexOf(api) === -1) apiCalls.push(api);
             });
             // add the remediation api calls also for data to be collected
-            if (settings.remediate && settings.remediate.includes(pluginId)){
-                plugin.apis_remediate.forEach(function(api) {
+            if (settings.remediate && settings.remediate.includes(pluginId)) {
+                plugin.apis_remediate.forEach(function (api) {
                     if (apiCalls.indexOf(api) === -1) apiCalls.push(api);
                 });
             }
@@ -146,7 +205,7 @@ var engine = function(cloudConfig, settings) {
     console.log(`INFO: Found ${apiCalls.length} API calls to make for ${settings.cloud} plugins`);
     console.log('INFO: Collecting metadata. This may take several minutes...');
 
-    const initializeFile = function(file, type, testQuery, resource) {
+    const initializeFile = function (file, type, testQuery, resource) {
         if (!file['access']) file['access'] = {};
         if (!file['pre_remediate']) file['pre_remediate'] = {};
         if (!file['pre_remediate']['actions']) file['pre_remediate']['actions'] = {};
@@ -170,7 +229,7 @@ var engine = function(cloudConfig, settings) {
         paginate: settings.skip_paginate,
         govcloud: settings.govcloud,
         china: settings.china
-    }, function(err, collection) {
+    }, function (err, collection) {
         if (err || !collection || !Object.keys(collection).length) return console.log(`ERROR: Unable to obtain API metadata: ${err || 'No data returned'}`);
         outputHandler.writeCollection(collection, settings.cloud);
 
@@ -181,9 +240,9 @@ var engine = function(cloudConfig, settings) {
         var resultsObject = {};  // Initialize resultsObject for azure gov cloud
 
         function executePlugins(cloudRemediateConfig) {
-            async.mapValuesLimit(plugins, 10, function(plugin, key, pluginDone) {
+            async.mapValuesLimit(plugins, 10, function (plugin, key, pluginDone) {
                 if (skippedPlugins.indexOf(key) > -1) return pluginDone(null, 0);
-                var postRun = function(err, results) {
+                var postRun = function (err, results) {
                     if (err) return console.log(`ERROR: ${err}`);
                     if (!results || !results.length) {
                         console.log(`Plugin ${plugin.title} returned no results. There may be a problem with this plugin.`);
@@ -197,12 +256,12 @@ var engine = function(cloudConfig, settings) {
                             if (suppressionFilter([key, results[r].region || 'any', results[r].resource || 'any'].join(':'))) {
                                 continue;
                             }
-    
+
                             resultsObject[plugin.title].push(results[r]);
 
                             var complianceMsg = [];
                             if (settings.compliance && settings.compliance.length) {
-                                settings.compliance.forEach(function(c) {
+                                settings.compliance.forEach(function (c) {
                                     if (plugin.compliance && plugin.compliance[c]) {
                                         complianceMsg.push(`${c.toUpperCase()}: ${plugin.compliance[c]}`);
                                     }
@@ -210,10 +269,10 @@ var engine = function(cloudConfig, settings) {
                             }
                             complianceMsg = complianceMsg.join('; ');
                             if (!complianceMsg.length) complianceMsg = null;
-    
+
                             // Write out the result (to console or elsewhere)
                             outputHandler.writeResult(results[r], plugin, key, complianceMsg);
-    
+
                             // Add this to our tracking for the worst status to calculate
                             // the exit code
                             maximumStatus = Math.max(maximumStatus, results[r].status);
@@ -234,11 +293,11 @@ var engine = function(cloudConfig, settings) {
                                 }
                             }
                         }
-    
+
                     }
-                    setTimeout(function() { pluginDone(err, maximumStatus); }, 0);
+                    setTimeout(function () { pluginDone(err, maximumStatus); }, 0);
                 };
-    
+
                 if (plugin.asl && settings['run-asl']) {
                     console.log(`INFO: Using custom ASL for plugin: ${plugin.title}`);
                     // Inject APIs and resource maps
@@ -248,16 +307,16 @@ var engine = function(cloudConfig, settings) {
                     let aslRunner;
                     try {
                         aslRunner = require(`./helpers/asl/asl-${aslVersion}.js`);
-    
+
                     } catch (e) {
                         postRun('Error: ASL: Wrong ASL Version: ', e);
                     }
-    
+
                     aslRunner(collection, plugin.asl, resourceMap, postRun);
                 } else {
                     plugin.run(collection, settings, postRun);
                 }
-            }, function(err) {
+            }, function (err) {
                 if (err) return console.log(err);
 
                 if (cloudConfig.StorageConnection && cloudConfig.BlobContainer) uploadResultsToBlob(resultsObject, cloudConfig.StorageConnection, cloudConfig.BlobContainer);
@@ -272,9 +331,9 @@ var engine = function(cloudConfig, settings) {
                 console.log('INFO: Scan complete');
             });
         }
-        
+
         if (settings.remediate && settings.remediate.length && cloudConfig.remediate) {
-            runAuth(settings, cloudConfig.remediate, function(err) {
+            runAuth(settings, cloudConfig.remediate, function (err) {
                 if (err) return console.log(err);
                 executePlugins(cloudConfig.remediate);
             });
